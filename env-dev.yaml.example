@@ -1,0 +1,11 @@
+vault:
+  address: http://127.0.0.1:8200
+  mount: secret
+  # Optional Vault namespace (Enterprise / HCP)
+  # namespace: my-namespace
+  # 1Password reference for the Vault token. Resolved at runtime via `op read`.
+  token: op://Dev/vault-dev/token
+  verify_tls: true
+  # Optional path to a CA certificate file or directory for TLS verification.
+  # When set, takes precedence over verify_tls.
+  # ca_path: /etc/ssl/certs/vault-ca.pem

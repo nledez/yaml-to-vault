@@ -1,0 +1,41 @@
+[project]
+name = "yaml-to-vault"
+version = "0.1.10"
+description = "Apply a desired Vault state declared in YAML, with values resolved from 1Password."
+readme = "README.md"
+authors = [
+    { name = "Nicolas Ledez", email = "247138+nledez@users.noreply.github.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "hvac>=2.4.0",
+    "pydantic>=2.12.5",
+    "pyyaml>=6.0.3",
+    "rich>=14.3.4",
+    "typer>=0.24.1",
+]
+
+[project.scripts]
+yaml-to-vault = "yaml_to_vault.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.6,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "pytest-mock>=3.15.1",
+    "ruff>=0.15.10",
+]
+
+[tool.pytest.ini_options]
+addopts = "--cov=yaml_to_vault --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["yaml_to_vault"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
