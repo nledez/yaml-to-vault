@@ -46,6 +46,7 @@ def test_init_success(mock_hvac_cls):
         token="fake-token",
         namespace=None,
         verify=True,
+        proxies=None,
     )
     assert vc.mount == "secret"
 
@@ -63,6 +64,7 @@ def test_init_with_ca_path(mock_hvac_cls):
         token="fake-token",
         namespace=None,
         verify="/ca.pem",
+        proxies=None,
     )
 
 

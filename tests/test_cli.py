@@ -17,6 +17,14 @@ vault:
   token: op://V/I/token
 """
 
+ENV_YAML_WITH_TUNNEL = """\
+vault:
+  address: http://127.0.0.1:8200
+  ssh_tunnel: ssh -L 127.0.0.1:8888:10.0.0.1:8888 bastion
+  proxy: http://127.0.0.1:8888
+  token: op://V/I/token
+"""
+
 SECRET_YAML = """\
 env: dev
 documents:
@@ -346,3 +354,40 @@ def test_policy_write_error(mock_vc_cls, mock_op_cls, tmp_path: Path):
     result = runner.invoke(app, ["policy", "--env", "dev", "--yes", str(hcl)])
     assert result.exit_code == 1
     assert "write boom" in result.output
+
+
+# -- SSH tunnel integration -------------------------------------------------
+
+
+@patch("yaml_to_vault.cli.ssh_tunnel")
+@patch("yaml_to_vault.cli.OnePasswordResolver")
+@patch("yaml_to_vault.cli.VaultClient")
+def test_plan_opens_ssh_tunnel(mock_vc_cls, mock_op_cls, mock_tunnel, tmp_path: Path):
+    (tmp_path / "env-dev.yaml").write_text(ENV_YAML_WITH_TUNNEL)
+    secret = tmp_path / "secret-app.yaml"
+    secret.write_text(SECRET_YAML)
+    mock_vc = _mock_vault_client()
+    mock_vc_cls.return_value = mock_vc
+    mock_op = _mock_op_resolver()
+    mock_op_cls.return_value = mock_op
+
+    result = runner.invoke(app, ["plan", str(secret)])
+    assert result.exit_code == 0
+    mock_tunnel.assert_called_once_with("ssh -L 127.0.0.1:8888:10.0.0.1:8888 bastion")
+
+
+@patch("yaml_to_vault.cli.ssh_tunnel")
+@patch("yaml_to_vault.cli.OnePasswordResolver")
+@patch("yaml_to_vault.cli.VaultClient")
+def test_apply_opens_ssh_tunnel(mock_vc_cls, mock_op_cls, mock_tunnel, tmp_path: Path):
+    (tmp_path / "env-dev.yaml").write_text(ENV_YAML_WITH_TUNNEL)
+    secret = tmp_path / "secret-app.yaml"
+    secret.write_text(SECRET_YAML)
+    mock_vc = _mock_vault_client()
+    mock_vc_cls.return_value = mock_vc
+    mock_op = _mock_op_resolver()
+    mock_op_cls.return_value = mock_op
+
+    result = runner.invoke(app, ["apply", "--yes", str(secret)])
+    assert result.exit_code == 0
+    mock_tunnel.assert_called_once()

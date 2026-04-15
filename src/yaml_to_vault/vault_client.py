@@ -21,11 +21,17 @@ class VaultClient:
         verify: bool | str = (
             env.vault.ca_path if env.vault.ca_path is not None else env.vault.verify_tls
         )
+        proxies = (
+            {"http": env.vault.proxy, "https": env.vault.proxy}
+            if env.vault.proxy
+            else None
+        )
         self._client = hvac.Client(
             url=env.vault.address,
             token=token,
             namespace=env.vault.namespace,
             verify=verify,
+            proxies=proxies,
         )
         try:
             authenticated = self._client.is_authenticated()

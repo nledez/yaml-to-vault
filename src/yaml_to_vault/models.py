@@ -55,6 +55,8 @@ class VaultConfig(BaseModel):
     token: OpRef
     verify_tls: bool = True
     ca_path: str | None = None
+    proxy: str | None = None
+    ssh_tunnel: str | None = None
 
 
 class EnvironmentConfig(BaseModel):

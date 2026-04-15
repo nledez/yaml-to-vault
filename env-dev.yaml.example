@@ -1,5 +1,7 @@
 vault:
   address: http://127.0.0.1:8200
+  ssh_tunnel: ssh -L 127.0.0.1:8888:127.0.0.1:8888 host-proxy
+  proxy: http://127.0.0.1:8888
   mount: secret
   # Optional Vault namespace (Enterprise / HCP)
   # namespace: my-namespace
