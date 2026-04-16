@@ -86,3 +86,31 @@ class VaultClient:
             self._client.sys.create_or_update_policy(name=name, policy=policy)
         except VaultError as exc:
             raise VaultClientError(f"Failed to write policy '{name}': {exc}") from exc
+
+    def read_role(self, name: str, jwt_mount: str) -> dict | None:
+        """Read a JWT auth role at ``auth/<jwt_mount>/role/<name>``.
+
+        Returns the ``data`` dict from the Vault response, or ``None`` if the
+        role does not exist.
+        """
+        path = f"auth/{jwt_mount}/role/{name}"
+        try:
+            response = self._client.read(path)
+        except InvalidPath:
+            return None
+        except VaultError as exc:
+            raise VaultClientError(f"Failed to read role '{name}': {exc}") from exc
+        if response is None:
+            return None
+        return response.get("data")
+
+    def write_role(self, name: str, jwt_mount: str, data: dict) -> None:
+        """Write a JWT auth role at ``auth/<jwt_mount>/role/<name>``.
+
+        Equivalent to ``vault write auth/<jwt_mount>/role/<name> @<file>.json``.
+        """
+        path = f"auth/{jwt_mount}/role/{name}"
+        try:
+            self._client.write_data(path, data=data)
+        except VaultError as exc:
+            raise VaultClientError(f"Failed to write role '{name}': {exc}") from exc

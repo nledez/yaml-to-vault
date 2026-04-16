@@ -20,19 +20,22 @@ src/yaml_to_vault/
   models.py        # Pydantic models, OpRef constrained type
   loader.py        # YAML → models, ConfigError
   onepassword.py   # `op read` wrapper, OnePasswordResolver (caches refs)
-  vault_client.py  # hvac KV v2 wrapper, token resolved via op
+  vault_client.py  # hvac KV v2 wrapper + policy + JWT-role helpers
   planner.py       # Action enum, build_plan(), render_plan(show_secrets)
-  cli.py           # Typer app: `plan`, `apply`
+  cli.py           # Typer app: `plan`, `apply`, `policy`, `role`
 tests/             # pytest + pytest-mock, no network/Vault required
 env-<name>.yaml    # one file per environment (gitignored except *.example)
 secret-<app>.yaml  # one file per app, declares N Vault documents
+role-<app>.json    # one file per app, literal JSON body for
+                   # `vault write auth/<jwt_mount>/role/<app>`
 ```
 
 ## File naming and CLI invocation
 
 - **Secret files**: `secret-<app>.yaml`. Each declares `env: <name>` at the top, plus a list of `documents`.
 - **Environment files**: `env-<name>.yaml`. Loaded from **the parent directory of each secret file** (NOT from a fixed location). Do not reintroduce `environments/`/`secrets/` subdirectories or a `--dir` flag.
-- The CLI takes secret files as **positional arguments**: `yaml-to-vault plan secret-app1.yaml secret-app2.yaml`. There is no `--env`, `--app`, or `--dir` flag — the environment is read from the YAML.
+- **Role files**: `role-<app>.json`. Literal JSON body, one role per file. The role name is the filename stem minus the `role-` prefix. Equivalent to `vault write auth/<jwt_mount>/role/<app> @role-<app>.json`. No `env` header — the `role` command takes `--env <name>` on the CLI (like `policy`). Drift is ignored: keys in Vault that are not declared in the JSON file are left alone.
+- The CLI takes secret files as **positional arguments** for `plan`/`apply`: `yaml-to-vault plan secret-app1.yaml secret-app2.yaml`. The environment is read from the YAML. `policy` and `role` take `--env <name>` explicitly (the HCL/JSON files themselves carry no env metadata).
 - **Single-environment invariant**: a single invocation handles exactly one environment. `load_inputs` rejects mismatched `env` values across files, and rejects divergent `env-<name>.yaml` definitions if files come from multiple directories. Preserve this invariant.
 
 ## Non-negotiable rules

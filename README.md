@@ -47,6 +47,10 @@ uv run yaml-to-vault apply ./config/secret-app1.yaml
 
 # Reveal the actual values in the diff (use with care)
 uv run yaml-to-vault plan secret-example.yaml --show-secrets
+
+# Upload a JWT auth role (equivalent to `vault write auth/<jwt_mount>/role/<name> @file`)
+uv run yaml-to-vault role --env dev role-my-app.json
+uv run yaml-to-vault role --env dev --yes role-app1.json role-app2.json
 ```
 
 By default the diff masks values (`(set)`, `(changed)`, `(unchanged)`). `--show-secrets` reveals them in clear text and prints a warning.
@@ -73,6 +77,23 @@ vault:
   namespace: my-namespace            # optional
   token: op://Prod/vault-prod/token  # 1Password reference
   verify_tls: true
+  jwt_mount: jwt-nomad               # optional, used by the `role` command
+```
+
+### `role-<name>.json` (next to `env-<name>.yaml`)
+
+Literal JSON body posted to `auth/<jwt_mount>/role/<name>`. Equivalent to
+`vault write auth/<jwt_mount>/role/<name> @role-<name>.json`. Drift is
+ignored: keys present in Vault but not in the JSON file are left untouched.
+
+```json
+{
+  "role_type": "jwt",
+  "bound_audiences": ["vault"],
+  "user_claim": "sub",
+  "token_policies": ["my-app"],
+  "token_ttl": "1h"
+}
 ```
 
 ## Tests

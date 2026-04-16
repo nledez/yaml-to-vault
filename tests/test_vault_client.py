@@ -207,3 +207,79 @@ def test_write_policy_vault_error():
     vc = _make_vc(mock_client)
     with pytest.raises(VaultClientError, match="Failed to write policy"):
         vc.write_policy("my-policy", "content")
+
+
+# -- read_role -----------------------------------------------------------
+
+
+def test_read_role_success():
+    mock_client = MagicMock()
+    mock_client.read.return_value = {
+        "data": {"role_type": "jwt", "bound_audiences": ["vault"]}
+    }
+    vc = _make_vc(mock_client)
+    assert vc.read_role("my-app", "jwt-nomad") == {
+        "role_type": "jwt",
+        "bound_audiences": ["vault"],
+    }
+    mock_client.read.assert_called_once_with("auth/jwt-nomad/role/my-app")
+
+
+def test_read_role_not_found_invalid_path():
+    mock_client = MagicMock()
+    mock_client.read.side_effect = InvalidPath()
+    vc = _make_vc(mock_client)
+    assert vc.read_role("missing", "jwt-nomad") is None
+
+
+def test_read_role_not_found_returns_none():
+    mock_client = MagicMock()
+    mock_client.read.return_value = None
+    vc = _make_vc(mock_client)
+    assert vc.read_role("missing", "jwt-nomad") is None
+
+
+def test_read_role_vault_error():
+    mock_client = MagicMock()
+    mock_client.read.side_effect = VaultError("forbidden")
+    vc = _make_vc(mock_client)
+    with pytest.raises(VaultClientError, match="Failed to read role"):
+        vc.read_role("my-app", "jwt-nomad")
+
+
+def test_read_role_uses_jwt_mount():
+    mock_client = MagicMock()
+    mock_client.read.return_value = {"data": {}}
+    vc = _make_vc(mock_client)
+    vc.read_role("my-app", "jwt-custom")
+    mock_client.read.assert_called_once_with("auth/jwt-custom/role/my-app")
+
+
+# -- write_role ----------------------------------------------------------
+
+
+def test_write_role_success():
+    mock_client = MagicMock()
+    vc = _make_vc(mock_client)
+    data = {"role_type": "jwt", "user_claim": "sub"}
+    vc.write_role("my-app", "jwt-nomad", data)
+    mock_client.write_data.assert_called_once_with(
+        "auth/jwt-nomad/role/my-app", data=data
+    )
+
+
+def test_write_role_vault_error():
+    mock_client = MagicMock()
+    mock_client.write_data.side_effect = VaultError("denied")
+    vc = _make_vc(mock_client)
+    with pytest.raises(VaultClientError, match="Failed to write role"):
+        vc.write_role("my-app", "jwt-nomad", {"role_type": "jwt"})
+
+
+def test_write_role_uses_jwt_mount():
+    mock_client = MagicMock()
+    vc = _make_vc(mock_client)
+    vc.write_role("my-app", "jwt-custom", {"x": 1})
+    mock_client.write_data.assert_called_once_with(
+        "auth/jwt-custom/role/my-app", data={"x": 1}
+    )

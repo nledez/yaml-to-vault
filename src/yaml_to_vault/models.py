@@ -57,6 +57,9 @@ class VaultConfig(BaseModel):
     ca_path: str | None = None
     proxy: str | None = None
     ssh_tunnel: str | None = None
+    # JWT auth backend mount path, used by the `role` command to write roles at
+    # auth/<jwt_mount>/role/<name>.
+    jwt_mount: str = "jwt-nomad"
 
 
 class EnvironmentConfig(BaseModel):

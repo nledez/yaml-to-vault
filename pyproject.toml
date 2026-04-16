@@ -1,6 +1,6 @@
 [project]
 name = "yaml-to-vault"
-version = "0.1.12"
+version = "0.1.13"
 description = "Apply a desired Vault state declared in YAML, with values resolved from 1Password."
 readme = "README.md"
 authors = [
