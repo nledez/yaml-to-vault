@@ -31,13 +31,32 @@ def _read_yaml(path: Path) -> dict:
 
 
 def load_environment(name: str, search_dir: Path) -> EnvironmentConfig:
-    """Load env-<name>.yaml from ``search_dir``."""
+    """Load env-<name>.yaml from ``search_dir``.
+
+    A relative ``ca_path`` is resolved against the directory of the env file, so the
+    tool can be run from any directory.
+    """
     path = search_dir / f"env-{name}.yaml"
     data = _read_yaml(path)
     try:
-        return EnvironmentConfig.model_validate(data)
+        env = EnvironmentConfig.model_validate(data)
     except ValidationError as exc:
         raise ConfigError(f"Invalid environment file {path}:\n{exc}") from exc
+    ca_path = env.vault.ca_path
+    if ca_path is not None and not Path(ca_path).is_absolute():
+        resolved = str((path.parent / ca_path).resolve())
+        env = env.model_copy(update={"vault": env.vault.model_copy(update={"ca_path": resolved})})
+    return env
+
+
+def _shared_env_dir(name: str, cwd: Path) -> Path:
+    """Directory holding env-<name>.yaml for a shared file: ``cwd``, then ``cwd/<name>``."""
+    candidates = [cwd, cwd / name]
+    for candidate in candidates:
+        if (candidate / f"env-{name}.yaml").exists():
+            return candidate.resolve()
+    searched = ", ".join(str(c / f"env-{name}.yaml") for c in candidates)
+    raise ConfigError(f"Environment file not found, searched: {searched}")
 
 
 def load_secrets_file(path: Path) -> SecretsFile:
@@ -56,14 +75,24 @@ class LoadedInputs:
     documents: list[Document]
 
 
-def load_inputs(secret_files: list[Path]) -> LoadedInputs:
+def load_inputs(
+    secret_files: list[Path],
+    env_override: str | None = None,
+    cwd: Path | None = None,
+) -> LoadedInputs:
     """Load secret files, ensure they target a single environment, and load it.
 
-    - Each secret file declares ``env: <name>`` at the top.
+    - Each secret file declares ``env: <name>`` at the top, or omits it to be shared
+      by every environment: the environment then comes from ``env_override``
+      (``--env``), which must agree with every file that does declare one.
     - All files must declare the same environment.
-    - For every distinct parent directory among the secret files, ``env-<name>.yaml``
-      is loaded; all loaded environments must be identical.
-    - Duplicate Vault paths across files are rejected.
+    - ``env-<name>.yaml`` is loaded from the parent directory of every file that
+      declares ``env``, and for shared files from ``cwd`` or else ``cwd/<name>`` (so
+      the tool runs from the env directory or from the repository root); all loaded
+      environments must be identical.
+    - In every document, ``{env}`` is replaced in the path and the op:// refs, and
+      documents whose ``envs`` list excludes the environment are skipped.
+    - Duplicate Vault paths across files are rejected (after substitution).
     """
     if not secret_files:
         raise ConfigError("At least one secret file is required.")
@@ -72,11 +101,22 @@ def load_inputs(secret_files: list[Path]) -> LoadedInputs:
     for path in secret_files:
         loaded.append((path, load_secrets_file(path)))
 
-    env_names = {sf.env for _, sf in loaded}
+    shared = [p for p, sf in loaded if sf.env is None]
+    if shared and env_override is None:
+        raise ConfigError(
+            "These files declare no 'env' and need the environment passed with --env: "
+            + ", ".join(str(p) for p in shared)
+        )
+
+    env_names = {sf.env for _, sf in loaded if sf.env is not None}
+    if env_override is not None:
+        env_names.add(env_override)
     if len(env_names) > 1:
         listing = ", ".join(
-            f"{p} → env={sf.env}" for p, sf in loaded
+            f"{p} → env={sf.env}" for p, sf in loaded if sf.env is not None
         )
+        if env_override is not None:
+            listing += f", --env={env_override}"
         raise ConfigError(
             "All secret files must target the same environment, got: " + listing
         )
@@ -85,8 +125,11 @@ def load_inputs(secret_files: list[Path]) -> LoadedInputs:
     env_config: EnvironmentConfig | None = None
     env_source: Path | None = None
     seen_dirs: set[Path] = set()
-    for path, _ in loaded:
-        parent = path.parent.resolve()
+    for path, sf in loaded:
+        if sf.env is not None:
+            parent = path.parent.resolve()
+        else:
+            parent = _shared_env_dir(env_name, cwd or Path.cwd())
         if parent in seen_dirs:
             continue
         seen_dirs.add(parent)
@@ -105,7 +148,10 @@ def load_inputs(secret_files: list[Path]) -> LoadedInputs:
     documents: list[Document] = []
     seen_paths: dict[str, Path] = {}
     for path, secrets in loaded:
-        for doc in secrets.documents:
+        for raw in secrets.documents:
+            if raw.envs is not None and env_name not in raw.envs:
+                continue
+            doc = raw.for_env(env_name)
             if doc.path in seen_paths:
                 raise ConfigError(
                     f"Duplicate Vault path '{doc.path}' "

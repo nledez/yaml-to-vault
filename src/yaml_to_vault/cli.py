@@ -29,7 +29,10 @@ app = typer.Typer(
 FilesArgument = Annotated[
     list[Path],
     typer.Argument(
-        help="Secret YAML files. Each must declare 'env: <name>'; all must agree.",
+        help=(
+            "Secret YAML files. Each declares 'env: <name>' (all must agree), "
+            "or omits it to be shared by every environment (then --env is required)."
+        ),
         exists=True,
         dir_okay=False,
         readable=True,
@@ -45,6 +48,17 @@ ShowSecretsOption = Annotated[
 YesOption = Annotated[
     bool,
     typer.Option("--yes", "-y", help="Skip the interactive confirmation prompt."),
+]
+SecretsEnvOption = Annotated[
+    str | None,
+    typer.Option(
+        "--env",
+        "-e",
+        help=(
+            "Environment of the files that declare no 'env' (env-<name>.yaml is then "
+            "read from the current directory). Must match the files that declare one."
+        ),
+    ),
 ]
 
 
@@ -63,11 +77,12 @@ def _maybe_tunnel(env: EnvironmentConfig) -> Iterator[None]:
 def plan_cmd(
     files: FilesArgument,
     show_secrets: ShowSecretsOption = False,
+    env: SecretsEnvOption = None,
 ) -> None:
     """Show what would change in Vault without writing anything."""
     console = Console()
     try:
-        inputs = load_inputs(files)
+        inputs = load_inputs(files, env_override=env)
         with _maybe_tunnel(inputs.environment):
             op_resolver = OnePasswordResolver()
             vault_client = VaultClient(inputs.environment, op_resolver)
@@ -85,11 +100,12 @@ def apply_cmd(
     files: FilesArgument,
     show_secrets: ShowSecretsOption = False,
     yes: YesOption = False,
+    env: SecretsEnvOption = None,
 ) -> None:
     """Build a plan, ask for confirmation, then apply the YAML state to Vault."""
     console = Console()
     try:
-        inputs = load_inputs(files)
+        inputs = load_inputs(files, env_override=env)
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
