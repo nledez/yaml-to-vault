@@ -391,3 +391,63 @@ def test_apply_opens_ssh_tunnel(mock_vc_cls, mock_op_cls, mock_tunnel, tmp_path:
     result = runner.invoke(app, ["apply", "--yes", str(secret)])
     assert result.exit_code == 0
     mock_tunnel.assert_called_once()
+
+
+SHARED_SECRET_YAML = """\
+documents:
+  - path: "{env}/app/db"
+    fields:
+      password: "op://infra_{env}/database/password"
+"""
+
+
+@patch("yaml_to_vault.cli.OnePasswordResolver")
+@patch("yaml_to_vault.cli.VaultClient")
+def test_plan_shared_file_with_env_option(mock_vc_cls, mock_op_cls, tmp_path: Path, monkeypatch):
+    env_dir = tmp_path / "dev"
+    env_dir.mkdir()
+    (env_dir / "env-dev.yaml").write_text(ENV_YAML)
+    shared = tmp_path / "secrets-app.yaml"
+    shared.write_text(SHARED_SECRET_YAML)
+    mock_vc_cls.return_value = _mock_vault_client()
+    mock_op = _mock_op_resolver()
+    mock_op_cls.return_value = mock_op
+    monkeypatch.chdir(env_dir)
+
+    result = runner.invoke(app, ["plan", "--env", "dev", str(shared)])
+
+    assert result.exit_code == 0, result.output
+    assert "secret/data/dev/app/db" in result.output
+    mock_op.resolve.assert_called_with("op://infra_dev/database/password")
+
+
+@patch("yaml_to_vault.cli.OnePasswordResolver")
+@patch("yaml_to_vault.cli.VaultClient")
+def test_apply_shared_file_with_env_option(mock_vc_cls, mock_op_cls, tmp_path: Path, monkeypatch):
+    env_dir = tmp_path / "dev"
+    env_dir.mkdir()
+    (env_dir / "env-dev.yaml").write_text(ENV_YAML)
+    shared = tmp_path / "secrets-app.yaml"
+    shared.write_text(SHARED_SECRET_YAML)
+    mock_vc = _mock_vault_client()
+    mock_vc_cls.return_value = mock_vc
+    mock_op_cls.return_value = _mock_op_resolver()
+    monkeypatch.chdir(env_dir)
+
+    result = runner.invoke(app, ["apply", "--env", "dev", "--yes", str(shared)])
+
+    assert result.exit_code == 0, result.output
+    mock_vc.write.assert_called_once_with(
+        "dev/app/db", {"password": "resolved-op://infra_dev/database/password"}
+    )
+
+
+def test_plan_shared_file_without_env_option(tmp_path: Path, monkeypatch):
+    shared = tmp_path / "secrets-app.yaml"
+    shared.write_text(SHARED_SECRET_YAML)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["plan", str(shared)])
+
+    assert result.exit_code == 1
+    assert "--env" in result.output

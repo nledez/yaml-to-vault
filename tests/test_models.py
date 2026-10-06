@@ -100,13 +100,25 @@ def test_secrets_file_accepts_valid_documents():
     assert sf.documents[0].path == "app/db"
 
 
-def test_secrets_file_requires_env():
+def test_secrets_file_env_is_optional_for_shared_files():
+    sf = SecretsFile.model_validate(
+        {
+            "documents": [
+                {"path": "app/db", "fields": {"x": "op://V/I/f"}},
+            ]
+        }
+    )
+    assert sf.env is None
+
+
+def test_secrets_file_rejects_empty_env():
     with pytest.raises(ValidationError):
         SecretsFile.model_validate(
             {
+                "env": "",
                 "documents": [
                     {"path": "app/db", "fields": {"x": "op://V/I/f"}},
-                ]
+                ],
             }
         )
 

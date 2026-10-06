@@ -33,9 +33,10 @@ role-<app>.json    # one file per app, literal JSON body for
 ## File naming and CLI invocation
 
 - **Secret files**: `secret-<app>.yaml`. Each declares `env: <name>` at the top, plus a list of `documents`.
-- **Environment files**: `env-<name>.yaml`. Loaded from **the parent directory of each secret file** (NOT from a fixed location). Do not reintroduce `environments/`/`secrets/` subdirectories or a `--dir` flag.
+- **Shared secret files**: a secret file may omit `env:` to be shared by every environment. `plan`/`apply` then require `--env <name>`, which must agree with every file that does declare `env`. `{env}` is replaced in document paths and `op://` refs (`Document.for_env`), and documents whose `envs:` list excludes the environment are skipped. Duplicate Vault paths are checked after substitution.
+- **Environment files**: `env-<name>.yaml`. Loaded from **the parent directory of each secret file** that declares `env`, and for shared files from the **current directory**, or else its `<name>/` subdirectory (so the tool runs from the repo root). A relative `ca_path` is resolved against the env file's directory. Do not reintroduce `environments/`/`secrets/` subdirectories or a `--dir` flag.
 - **Role files**: `role-<app>.json`. Literal JSON body, one role per file. The role name is the filename stem minus the `role-` prefix. Equivalent to `vault write auth/<jwt_mount>/role/<app> @role-<app>.json`. No `env` header — the `role` command takes `--env <name>` on the CLI (like `policy`). Drift is ignored: keys in Vault that are not declared in the JSON file are left alone.
-- The CLI takes secret files as **positional arguments** for `plan`/`apply`: `yaml-to-vault plan secret-app1.yaml secret-app2.yaml`. The environment is read from the YAML. `policy` and `role` take `--env <name>` explicitly (the HCL/JSON files themselves carry no env metadata).
+- The CLI takes secret files as **positional arguments** for `plan`/`apply`: `yaml-to-vault plan secret-app1.yaml secret-app2.yaml`. The environment is read from the YAML, or from `--env` for shared files. `policy` and `role` take `--env <name>` explicitly (the HCL/JSON files themselves carry no env metadata).
 - **Single-environment invariant**: a single invocation handles exactly one environment. `load_inputs` rejects mismatched `env` values across files, and rejects divergent `env-<name>.yaml` definitions if files come from multiple directories. Preserve this invariant.
 
 ## Non-negotiable rules

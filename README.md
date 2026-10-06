@@ -45,6 +45,10 @@ uv run yaml-to-vault plan secret-app1.yaml secret-app2.yaml
 # Files in another directory — env-<name>.yaml is loaded from each file's parent dir
 uv run yaml-to-vault apply ./config/secret-app1.yaml
 
+# A file shared by every environment (no `env:`): pass --env, env-<name>.yaml is
+# read from the current directory, or else from its <name>/ subdirectory
+uv run yaml-to-vault plan --env prd vault/secrets-app1.yaml
+
 # Reveal the actual values in the diff (use with care)
 uv run yaml-to-vault plan secret-example.yaml --show-secrets
 
@@ -68,7 +72,28 @@ documents:
       password: op://Dev/app1-db/password
 ```
 
-### `env-<name>.yaml` (next to the secret file)
+### Shared `secret-<app>.yaml` (every environment)
+
+A file without `env:` is applied to the environment given by `--env`. `{env}` is
+replaced by that environment in every `path` and `op://` reference, and a
+document listing `envs:` is only written to those environments. A Vault path
+declared twice for the same environment (shared file + env-specific file) is
+rejected.
+
+```yaml
+documents:
+  - path: "{env}/app1/database"
+    fields:
+      password: "op://infra_{env}/database/password"
+  - path: "{env}/app1/billing"
+    envs: [prd, demo]                # absent = every environment
+    fields:
+      api_key: "op://infra_{env}/billing/api_key"
+```
+
+### `env-<name>.yaml` (next to the secret file; for shared files, in the current directory or its `<name>/` subdirectory)
+
+A relative `ca_path` is resolved against the directory of the env file.
 
 ```yaml
 vault:

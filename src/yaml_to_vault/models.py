@@ -68,15 +68,29 @@ class EnvironmentConfig(BaseModel):
     vault: VaultConfig
 
 
+ENV_PLACEHOLDER = "{env}"
+
+
 class Document(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     path: str = Field(min_length=1)
+    # Restrict the document to these environments; absent = every environment.
+    envs: list[str] | None = Field(default=None, min_length=1)
     fields: dict[str, OpRef] = Field(min_length=1)
+
+    def for_env(self, env: str) -> Document:
+        """Return a copy with ``{env}`` replaced in the path and the op:// refs."""
+        return Document(
+            path=self.path.replace(ENV_PLACEHOLDER, env),
+            fields={k: v.replace(ENV_PLACEHOLDER, env) for k, v in self.fields.items()},
+        )
 
 
 class SecretsFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    env: str = Field(min_length=1)
+    # Absent for a file shared by every environment: the environment then comes
+    # from `--env`, and `{env}` placeholders are resolved against it.
+    env: str | None = Field(default=None, min_length=1)
     documents: list[Document] = Field(min_length=1)

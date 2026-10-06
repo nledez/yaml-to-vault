@@ -237,3 +237,129 @@ def test_example_files_load_end_to_end(tmp_path: Path):
             "op://Infrastructure/Customer - dev - secure-app/database_password"
         ),
     }
+
+
+# -- shared files: no `env:`, `{env}` placeholder, `envs:` filter ----------
+
+SHARED_YAML = """\
+documents:
+  - path: "{env}/app/db"
+    fields:
+      password: "op://infra_{env}/database/password"
+      shared: "op://Infrastructure/shared/value"
+  - path: "{env}/app/sellsy"
+    envs: [prd]
+    fields:
+      api_key: "op://infra_{env}/sellsy/api_key"
+"""
+
+
+def test_load_inputs_shared_file_uses_env_option_and_cwd(tmp_path: Path):
+    shared_dir = tmp_path / "vault"
+    shared_dir.mkdir()
+    env_dir = tmp_path / "dev"
+    env_dir.mkdir()
+    _write(env_dir / "env-dev.yaml", ENV_YAML)
+    f = _write(shared_dir / "secrets-app.yaml", SHARED_YAML)
+
+    inputs = load_inputs([f], env_override="dev", cwd=env_dir)
+
+    assert inputs.env_name == "dev"
+    assert inputs.environment.vault.address == "http://v"
+    assert [d.path for d in inputs.documents] == ["dev/app/db"]
+    assert inputs.documents[0].fields == {
+        "password": "op://infra_dev/database/password",
+        "shared": "op://Infrastructure/shared/value",
+    }
+
+
+def test_load_inputs_envs_filter_keeps_listed_env(tmp_path: Path):
+    _write(tmp_path / "env-prd.yaml", ENV_YAML)
+    f = _write(tmp_path / "secrets-app.yaml", SHARED_YAML)
+
+    inputs = load_inputs([f], env_override="prd", cwd=tmp_path)
+
+    assert [d.path for d in inputs.documents] == ["prd/app/db", "prd/app/sellsy"]
+    assert inputs.documents[1].fields == {"api_key": "op://infra_prd/sellsy/api_key"}
+
+
+def test_load_inputs_shared_file_requires_env_option(tmp_path: Path):
+    f = _write(tmp_path / "secrets-app.yaml", SHARED_YAML)
+    with pytest.raises(ConfigError, match="--env"):
+        load_inputs([f], cwd=tmp_path)
+
+
+def test_load_inputs_rejects_env_option_conflicting_with_file(tmp_path: Path):
+    _write(tmp_path / "env-dev.yaml", ENV_YAML)
+    f = _write(tmp_path / "secret-app.yaml", _secret_yaml("dev", "app/db", "x"))
+    with pytest.raises(ConfigError, match="same environment"):
+        load_inputs([f], env_override="prd", cwd=tmp_path)
+
+
+def test_load_inputs_accepts_env_option_matching_file(tmp_path: Path):
+    _write(tmp_path / "env-dev.yaml", ENV_YAML)
+    f = _write(tmp_path / "secret-app.yaml", _secret_yaml("dev", "app/db", "x"))
+    inputs = load_inputs([f], env_override="dev", cwd=tmp_path)
+    assert [d.path for d in inputs.documents] == ["app/db"]
+
+
+def test_load_inputs_merges_shared_and_env_specific_files(tmp_path: Path):
+    shared_dir = tmp_path / "vault"
+    shared_dir.mkdir()
+    env_dir = tmp_path / "dev"
+    env_dir.mkdir()
+    _write(env_dir / "env-dev.yaml", ENV_YAML)
+    shared = _write(shared_dir / "secrets-app.yaml", SHARED_YAML)
+    specific = _write(env_dir / "secrets-dev-app.yaml", _secret_yaml("dev", "dev/app/extra", "x"))
+
+    inputs = load_inputs([shared, specific], env_override="dev", cwd=env_dir)
+
+    assert [d.path for d in inputs.documents] == ["dev/app/db", "dev/app/extra"]
+
+
+def test_load_inputs_detects_duplicate_paths_after_substitution(tmp_path: Path):
+    _write(tmp_path / "env-dev.yaml", ENV_YAML)
+    shared = _write(tmp_path / "secrets-app.yaml", SHARED_YAML)
+    specific = _write(tmp_path / "secrets-dev-app.yaml", _secret_yaml("dev", "dev/app/db", "x"))
+    with pytest.raises(ConfigError, match="Duplicate Vault path 'dev/app/db'"):
+        load_inputs([shared, specific], env_override="dev", cwd=tmp_path)
+
+
+def test_load_secrets_file_rejects_empty_envs(tmp_path: Path):
+    f = _write(
+        tmp_path / "s.yaml",
+        'documents:\n  - path: a\n    envs: []\n    fields:\n      x: "op://V/I/f"\n',
+    )
+    with pytest.raises(ConfigError, match="Invalid secrets file"):
+        load_secrets_file(f)
+
+
+def test_load_inputs_shared_file_finds_env_dir_from_repo_root(tmp_path: Path):
+    (tmp_path / "vault").mkdir()
+    (tmp_path / "prd").mkdir()
+    _write(tmp_path / "prd" / "env-prd.yaml", ENV_YAML)
+    f = _write(tmp_path / "vault" / "secrets-app.yaml", SHARED_YAML)
+
+    inputs = load_inputs([f], env_override="prd", cwd=tmp_path)
+
+    assert inputs.env_name == "prd"
+    assert [d.path for d in inputs.documents] == ["prd/app/db", "prd/app/sellsy"]
+
+
+def test_load_inputs_shared_file_missing_env_lists_searched_paths(tmp_path: Path):
+    f = _write(tmp_path / "secrets-app.yaml", SHARED_YAML)
+    with pytest.raises(ConfigError, match=r"env-prd\.yaml.*prd/env-prd\.yaml"):
+        load_inputs([f], env_override="prd", cwd=tmp_path)
+
+
+def test_load_environment_resolves_relative_ca_path_against_env_dir(tmp_path: Path):
+    env_dir = tmp_path / "prd"
+    env_dir.mkdir()
+    _write(env_dir / "env-prd.yaml", ENV_YAML + "  ca_path: ../root.crt\n")
+    cfg = load_environment("prd", env_dir)
+    assert cfg.vault.ca_path == str((tmp_path / "root.crt").resolve())
+
+
+def test_load_environment_keeps_absolute_ca_path(tmp_path: Path):
+    _write(tmp_path / "env-dev.yaml", ENV_YAML + "  ca_path: /etc/ssl/ca.pem\n")
+    assert load_environment("dev", tmp_path).vault.ca_path == "/etc/ssl/ca.pem"
